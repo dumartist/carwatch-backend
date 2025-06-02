@@ -1,0 +1,11 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+*.egg-info/
+backup/
+# ... other common Python ignores
