@@ -1,6 +1,6 @@
 DB_HOST = "database.xetf.my.id"
 DB_USER = "root"
-DB_PASSWORD = "Ehetenandayo123"
+DB_PASSWORD = "Ehetendandayo123"
 DB_NAME = "carwatch"
 DB_PORT = 3306
 
