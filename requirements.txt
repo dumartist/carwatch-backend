@@ -2,3 +2,6 @@ Flask
 mysql-connector-python
 bcrypt
 bleach
+opencv-python
+numpy
+ultralytics

@@ -4,14 +4,14 @@ import numpy as np
 import os
 from ultralytics import YOLO
 
+# --- Determine the base directory of the project ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # --- Configuration for Models ---
-# Path to your trained YOLOv8 License Plate Detection (LPD) model
-LPD_MODEL_PATH = r"C:/carwatch-backend/best_LPD.pt"
-# Path to your trained YOLOv8 Character Detection (OCR) model
-OCR_MODEL_PATH = r"C:/carwatch-backend/best_OCR.pt"
+LPD_MODEL_PATH = os.path.join(BASE_DIR, "models", "best_LPD.pt")
+OCR_MODEL_PATH = os.path.join(BASE_DIR, "models", "best_OCR.pt")
 
 # --- YOLOv8 Model Loading (Load once when this module is imported) ---
-# Global variables to hold the loaded models
 lpd_model = None
 ocr_model = None
 
@@ -24,8 +24,7 @@ def load_yolo_models():
             print(f"YOLOv8 License Plate Detection model loaded successfully from: {LPD_MODEL_PATH}")
         except Exception as e:
             print(f"[ERROR] Could not load YOLOv8 LPD model from {LPD_MODEL_PATH}. Error: {e}")
-            # Consider raising an exception or handling this more robustly in a real application
-            exit() # Critical error, cannot proceed without model
+            exit() 
 
     if ocr_model is None:
         try:
@@ -33,10 +32,8 @@ def load_yolo_models():
             print(f"YOLOv8 Character Recognition (OCR) model loaded successfully from: {OCR_MODEL_PATH}")
         except Exception as e:
             print(f"[ERROR] Could not load YOLOv8 OCR model from {OCR_MODEL_PATH}. Error: {e}")
-            # Consider raising an exception or handling this more robustly
-            exit() # Critical error, cannot proceed without model
+            exit()
 
-# Call this function once when the module is imported
 load_yolo_models()
 
 # --- Stage 1: License Plate Detection ---
@@ -51,7 +48,7 @@ def detect_and_crop_plate(image_np):
         return None
 
     print("\n--- Stage 1: Detecting license plates ---")
-    # Use the globally loaded lpd_model
+    # Use the LPD model
     results = lpd_model(img, conf=0.5, iou=0.5, verbose=False)
 
     best_plate_crop = None
@@ -91,7 +88,7 @@ def recognize_characters_with_yolo(cropped_plate_img):
         return ""
 
     print("\n--- Stage 2: Recognizing characters on the cropped plate ---")
-    # Use the globally loaded ocr_model
+    # Use the OCR model
     results = ocr_model(cropped_plate_img, conf=0.1, iou=0.3, verbose=False)
 
     detected_chars_with_coords = []

@@ -33,7 +33,6 @@ def register():
 
     cursor = db.cursor()
     try:
-        # Sanitize username
         username = bleach.clean(username)
 
         sql_check_user = "SELECT username FROM users WHERE username = %s"
@@ -69,7 +68,6 @@ def login():
 
     cursor = db.cursor(dictionary=True)
     try:
-        # Sanitize username
         username = bleach.clean(username)
 
         sql = "SELECT user_id, username, password FROM users WHERE username = %s"
@@ -78,8 +76,8 @@ def login():
         user = cursor.fetchone()
 
         if user and utils.check_password(password, user['password']):
-            session['user_id'] = user['user_id'] # Store user_id in session
-            session['username'] = user['username'] # Store username in session
+            session['user_id'] = user['user_id']
+            session['username'] = user['username']
             response = {
                 "success": True,
                 "message": "Login successful",
@@ -105,18 +103,34 @@ def logout():
     session.pop('username', None)
     return jsonify({'success': True, 'message': 'Logout successful'}), 200
 
+@app.route('/user/me', methods=['GET'])
+def get_current_user():
+    if 'user_id' not in session or 'username' not in session:
+        return jsonify({'success': False, 'message': 'Unauthorized. Please log in.'}), 401
+
+    user_id = session['user_id']
+    username = session['username']
+
+    return jsonify({
+        'success': True,
+        'message': 'User details retrieved successfully.',
+        'data': {
+            'user_id': user_id,
+            'username': username
+        }
+    }), 200
+
 @app.route('/user/update/username', methods=['POST'])
 def update_username():
     if 'user_id' not in session:
         return jsonify({'success': False, 'message': 'Unauthorized. Please log in.'}), 401
 
     current_user_id = session['user_id']
-    data = request.get_json()
+    data = request.get_json(force=True) 
     new_username = data.get('new_username')
-    password_for_verification = data.get('password')
 
-    if not new_username or not password_for_verification:
-        return jsonify({'success': False, 'message': 'New username and current password are required'}), 400
+    if not new_username:
+        return jsonify({'success': False, 'message': 'New username is required'}), 400
 
     if not isinstance(new_username, str) or len(new_username) < 2:
         return jsonify({'success': False, 'message': 'New username must be a string of at least 2 characters'}), 400
@@ -127,24 +141,13 @@ def update_username():
 
     cursor = db.cursor(dictionary=True)
     try:
-        # Sanitize new_username
         new_username = bleach.clean(new_username)
 
-        # Verify current password
-        sql_get_user = "SELECT password FROM users WHERE user_id = %s"
-        cursor.execute(sql_get_user, (current_user_id,))
-        user_data = cursor.fetchone()
-
-        if not user_data or not utils.check_password(password_for_verification, user_data['password']):
-            return jsonify({'success': False, 'message': 'Incorrect current password'}), 403
-
-        # Check if new username is already taken by another user
         sql_check_new_username = "SELECT user_id FROM users WHERE username = %s AND user_id != %s"
         cursor.execute(sql_check_new_username, (new_username, current_user_id))
         if cursor.fetchone():
             return jsonify({'success': False, 'message': 'New username is already taken'}), 409
 
-        # Update username
         sql_update_username = "UPDATE users SET username = %s WHERE user_id = %s"
         cursor.execute(sql_update_username, (new_username, current_user_id))
         db.commit()
@@ -182,7 +185,7 @@ def update_password():
     if new_password != confirm_new_password:
         return jsonify({'success': False, 'message': 'New password and confirmation do not match'}), 400
 
-    if len(new_password) < 6: # Basic password length validation
+    if len(new_password) < 6:
         return jsonify({'success': False, 'message': 'New password must be at least 6 characters long'}), 400
 
     db = utils.connect_to_db()
@@ -191,7 +194,6 @@ def update_password():
 
     cursor = db.cursor(dictionary=True)
     try:
-        # Verify current password
         sql_get_user = "SELECT password FROM users WHERE user_id = %s"
         cursor.execute(sql_get_user, (current_user_id,))
         user_data = cursor.fetchone()
@@ -199,7 +201,6 @@ def update_password():
         if not user_data or not utils.check_password(current_password, user_data['password']):
             return jsonify({'success': False, 'message': 'Incorrect current password'}), 403
 
-        # Hash the new password and update
         hashed_new_password = utils.hash_password(new_password)
         sql_update_password = "UPDATE users SET password = %s WHERE user_id = %s"
         cursor.execute(sql_update_password, (hashed_new_password, current_user_id))
@@ -232,7 +233,6 @@ def delete_user():
 
     cursor = db.cursor(dictionary=True)
     try:
-        # Verify current password
         sql_get_user = "SELECT password FROM users WHERE user_id = %s"
         cursor.execute(sql_get_user, (current_user_id,))
         user_data = cursor.fetchone()
@@ -240,17 +240,14 @@ def delete_user():
         if not user_data or not utils.check_password(password_for_verification, user_data['password']):
             return jsonify({'success': False, 'message': 'Incorrect password. Account deletion failed.'}), 403
 
-        # Delete associated history records first to maintain referential integrity
-        # (Assuming no ON DELETE CASCADE is set up at the database level for history.user_id)
+        # Delete associated history records first
         sql_delete_history = "DELETE FROM history WHERE user_id = %s"
         cursor.execute(sql_delete_history, (current_user_id,))
         
-        # Delete the user
         sql_delete_user = "DELETE FROM users WHERE user_id = %s"
         cursor.execute(sql_delete_user, (current_user_id,))
         db.commit()
 
-        # Clear session after successful deletion
         session.pop('user_id', None)
         session.pop('username', None)
 
@@ -301,11 +298,10 @@ def upload_image():
             os.remove(filepath) 
             return jsonify({'success': False, 'message': f'Error decoding image: {e}'}), 500
 
-        # Perform OCR using the imported functions
-        cropped_plate = detect_and_crop_plate(img_np) # No need to pass model anymore
+        cropped_plate = detect_and_crop_plate(img_np)
         plate_number = ""
         if cropped_plate is not None:
-            plate_number = recognize_characters_with_yolo(cropped_plate) # No need to pass model anymore
+            plate_number = recognize_characters_with_yolo(cropped_plate)
             print(f"OCR Result: {plate_number}")
         else:
             print("OCR could not be performed as no plate was detected.")
@@ -339,7 +335,6 @@ def upload_image():
     
     return jsonify({'success': False, 'message': 'Something went wrong.'}), 500
 
-# --- Your existing /history/plate route (unchanged from previous revision) ---
 @app.route('/history/plate', methods=['POST'])
 def record_plate():
     data = request.get_json()
@@ -376,28 +371,26 @@ def record_plate():
 # IN CASE KLO CODE YG ATAS ERROR
 # @app.route('/history/plate', methods=['POST'])
 # def record_plate():
-#     # For consistency and security, this route should also use session for user_id
 #     if 'user_id' not in session:
 #         return jsonify({'success': False, 'message': 'Unauthorized. Please log in to record history.'}), 401
-
+# 
 #     current_user_id = session['user_id']
 #     data = request.get_json()
 #     plate = data.get('plate')
-#     subject = data.get('subject')  # e.g., "Entry" or "Exit"
+#     subject = data.get('subject')
 #     description = data.get('description')
-
-#     if not all([plate, subject, description]): # user_id check removed as it's from session
+# 
+#     if not all([plate, subject, description]):
 #          return jsonify({'success': False, 'message': 'Missing plate, subject, or description'}), 400
-
-#     # Sanitize inputs
+# 
 #     plate = bleach.clean(plate)
 #     subject = bleach.clean(subject)
 #     description = bleach.clean(description)
-
+# 
 #     db = utils.connect_to_db()
 #     if not db:
 #         return jsonify({'success': False, 'message': 'Database connection error'}), 500
-
+# 
 #     cursor = db.cursor()
 #     try:
 #         sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
