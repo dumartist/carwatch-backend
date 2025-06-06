@@ -5,3 +5,5 @@ bleach
 opencv-python
 numpy
 ultralytics
+gunicorn
+python-dotenv
