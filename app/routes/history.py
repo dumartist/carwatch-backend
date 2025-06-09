@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import datetime
 import logging
+from ..services.db_upload import db_upload_image
 
 # Import utilities with fallback
 try:
@@ -53,6 +54,13 @@ def upload_image():
             f.write(image_bytes)
         logger.info(f"Image saved temporarily to {filepath} with status '{status}'")
 
+        # Upload to database FIRST, before OCR processing
+        db_upload_result = db_upload_image(filename)
+        if db_upload_result['success']:
+            logger.info(f"Image uploaded to database: {db_upload_result['message']}")
+        else:
+            logger.warning(f"Failed to upload image to database: {db_upload_result['message']}")
+
         try:
             img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
             if img_np is None:
@@ -61,6 +69,7 @@ def upload_image():
             os.remove(filepath) 
             return jsonify({'success': False, 'message': f'Error decoding image: {e}'}), 500
 
+        # Process OCR after database upload
         cropped_plate = detect_and_crop_plate(img_np)
         plate_number = ""
         if cropped_plate is not None:
@@ -78,16 +87,32 @@ def upload_image():
                 val = (plate_number, subject, description)
                 cursor.execute(sql, val)
                 db.commit()
-                message = 'Image received, OCR processed, and data recorded successfully.'
+                message = 'Image received, uploaded to database, OCR processed, and data recorded successfully.'
                 status_code = 201
         except Exception as e:
             logger.error(f"Database recording error: {e}")
             message = f'Failed to record data to database: {e}'
             status_code = 500
         finally:
+            # Clean up temporary file
             os.remove(filepath)
 
-        return jsonify({'success': status_code == 201, 'message': message, 'plate_number': plate_number, 'status': status}), status_code
+        response_data = {
+            'success': status_code == 201, 
+            'message': message, 
+            'plate_number': plate_number, 
+            'status': status
+        }
+        
+        # Include database upload status in response
+        if db_upload_result['success']:
+            response_data['image_uploaded'] = True
+            response_data['image_filename'] = db_upload_result['filename']
+        else:
+            response_data['image_uploaded'] = False
+            response_data['upload_error'] = db_upload_result['message']
+
+        return jsonify(response_data), status_code
     
     return jsonify({'success': False, 'message': 'Something went wrong.'}), 500
 

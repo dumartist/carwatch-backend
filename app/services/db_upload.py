@@ -68,54 +68,61 @@ def db_upload_image(image_filename):
             return {'success': False, 'message': 'Image file too large (max 16MB)'}
 
         # Save to database using simplified schema without ID
-        with get_db_connection() as (db, cursor):
-            try:
-                sql = """INSERT INTO images 
-                         (filename, image_data, file_size, file_type, upload_date) 
-                         VALUES (%s, %s, %s, %s, %s)"""
+        try:
+            with get_db_connection() as (db, cursor):
+                try:
+                    sql = """INSERT INTO images 
+                             (filename, image_data, file_size, file_type, upload_date) 
+                             VALUES (%s, %s, %s, %s, %s)"""
 
-                values = (
-                    image_filename,
-                    img_data,
-                    file_size,
-                    file_extension,
-                    datetime.now()
-                )
-                
-                cursor.execute(sql, values)
-                db.commit()
-                
-                logger.info(f"Successfully uploaded {image_filename} as {format_type}")
-                return {
-                    'success': True, 
-                    'message': f'Image uploaded successfully as {format_type}',
-                    'filename': image_filename,
-                    'file_size': file_size
-                }
-                
-            except mysql.connector.Error as db_error:
-                # If images table doesn't exist, try to create it
-                if "doesn't exist" in str(db_error).lower():
-                    logger.warning("Images table doesn't exist, attempting to create it")
-                    try:
-                        create_images_table(cursor, db)
-                        # Retry the insert
-                        cursor.execute(sql, values)
-                        db.commit()
-                        
-                        logger.info(f"Successfully uploaded {image_filename} after creating table")
-                        return {
-                            'success': True, 
-                            'message': f'Image uploaded successfully (table created)',
-                            'filename': image_filename,
-                            'file_size': file_size
-                        }
-                    except Exception as create_error:
-                        logger.error(f"Failed to create images table: {create_error}")
-                        return {'success': False, 'message': 'Database table creation failed'}
-                else:
-                    logger.error(f"Database error: {db_error}")
-                    return {'success': False, 'message': f'Database error: {str(db_error)}'}
+                    values = (
+                        image_filename,
+                        img_data,
+                        file_size,
+                        file_extension,
+                        datetime.now()
+                    )
+                    
+                    cursor.execute(sql, values)
+                    db.commit()
+                    
+                    logger.info(f"Successfully uploaded {image_filename} as {format_type} ({file_size} bytes)")
+                    return {
+                        'success': True, 
+                        'message': f'Image uploaded successfully as {format_type}',
+                        'filename': image_filename,
+                        'file_size': file_size
+                    }
+                    
+                except mysql.connector.Error as db_error:
+                    # If images table doesn't exist, try to create it
+                    if "doesn't exist" in str(db_error).lower():
+                        logger.warning("Images table doesn't exist, attempting to create it")
+                        try:
+                            create_images_table(cursor, db)
+                            # Retry the insert
+                            cursor.execute(sql, values)
+                            db.commit()
+                            
+                            logger.info(f"Successfully uploaded {image_filename} after creating table")
+                            return {
+                                'success': True, 
+                                'message': f'Image uploaded successfully (table created)',
+                                'filename': image_filename,
+                                'file_size': file_size
+                            }
+                        except Exception as create_error:
+                            logger.error(f"Failed to create images table: {create_error}")
+                            return {'success': False, 'message': 'Database table creation failed'}
+                    else:
+                        logger.error(f"Database error: {db_error}")
+                        return {'success': False, 'message': f'Database error: {str(db_error)}'}
+        except ImportError as import_error:
+            logger.error(f"Database connection import error: {import_error}")
+            return {'success': False, 'message': 'Database connection not available'}
+        except Exception as conn_error:
+            logger.error(f"Database connection error: {conn_error}")
+            return {'success': False, 'message': f'Database connection failed: {str(conn_error)}'}
         
     except Exception as e:
         logger.error(f"Error uploading image: {str(e)}")

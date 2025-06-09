@@ -30,31 +30,22 @@ def check_models():
 # Check models quietly
 models_ok = check_models()
 
-# Try new structure, fallback to legacy
+# Import and create the Flask app using new structure
 try:
     from app import create_app
     app = create_app()
     print("Using new app structure")
-except ImportError:
-    print("Using legacy structure")
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except:
-        pass
+except ImportError as e:
+    logger.error(f"Failed to import app module: {e}")
+    print("Error: Could not import app module")
+    sys.exit(1)
 
 if __name__ == "__main__":
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        real_ip = s.getsockname()[0]
-        s.close()
-        print(f"Available at: http://{real_ip}:8000")
-    except:
-        print("Available at: http://localhost:8000")
+    print("Available at: http://localhost:8000")
+    print("Server starting...")
     
     if not models_ok:
         print("WARNING: OCR will not work without model files")
+        print("Place best_LPD.pt and best_OCR.pt in the /models/ directory")
     
-    app.run(host='0.0.0.0', port=8000, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=8000, debug=True, use_reloader=False, threaded=True)
