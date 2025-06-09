@@ -1,6 +1,4 @@
 # ocr_service.py
-import cv2
-import numpy as np
 import os
 import logging
 from ultralytics import YOLO

@@ -109,7 +109,9 @@ CREATE TABLE history (
     plate VARCHAR(255),
     subject VARCHAR(255),
     description TEXT,
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    user_id INT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL
 );
 ```
 
@@ -197,6 +199,65 @@ GET /auth/me
         "user_id": 1,
         "username": "your_username"
     }
+}
+```
+
+#### Update Username
+```http
+POST /auth/update/username
+Content-Type: application/json
+
+{
+    "new_username": "new_username"
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Username updated successfully",
+    "data": {
+        "new_username": "new_username"
+    }
+}
+```
+
+#### Update Password
+```http
+POST /auth/update/password
+Content-Type: application/json
+
+{
+    "current_password": "current_password",
+    "new_password": "new_password",
+    "confirm_new_password": "new_password"
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Password updated successfully"
+}
+```
+
+#### Delete User Account
+```http
+POST /auth/delete
+Content-Type: application/json
+
+{
+    "password": "user_password"
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "message": "Account deleted successfully"
 }
 ```
 

@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 import bleach
 import os
 import cv2
@@ -95,9 +95,21 @@ def upload_image():
 def get_all_history():
     try:
         with get_db_connection() as (db, cursor):
-            sql = "SELECT subject, plate, description, date FROM history ORDER BY date DESC"
-            cursor.execute(sql)
-            history_data = cursor.fetchall()
+            # Check if user_id column exists in history table
+            try:
+                sql = """SELECT h.subject, h.plate, h.description, h.date, 
+                               u.username 
+                        FROM history h 
+                        LEFT JOIN users u ON h.user_id = u.user_id 
+                        ORDER BY h.date DESC"""
+                cursor.execute(sql)
+                history_data = cursor.fetchall()
+            except Exception:
+                # Fallback to original query if user_id column doesn't exist
+                sql = "SELECT subject, plate, description, date FROM history ORDER BY date DESC"
+                cursor.execute(sql)
+                history_data = cursor.fetchall()
+            
             return jsonify({'success': True, 'message': 'History retrieved', 'data': history_data}), 200
     except Exception as e:
         logger.error(f"History error: {e}")
@@ -113,10 +125,20 @@ def record_plate():
     if not all([plate, subject, description]):
         return jsonify({'success': False, 'message': 'Missing required fields'}), 400
 
+    # Get user_id from session if available
+    user_id = session.get('user_id', None)
+
     try:
         with get_db_connection() as (db, cursor):
-            sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
-            cursor.execute(sql, (bleach.clean(plate), bleach.clean(subject), bleach.clean(description)))
+            # Try to insert with user_id first
+            try:
+                sql = "INSERT INTO history (plate, subject, description, user_id) VALUES (%s, %s, %s, %s)"
+                cursor.execute(sql, (bleach.clean(plate), bleach.clean(subject), bleach.clean(description), user_id))
+            except Exception:
+                # Fallback to original schema without user_id
+                sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
+                cursor.execute(sql, (bleach.clean(plate), bleach.clean(subject), bleach.clean(description)))
+            
             db.commit()
             return jsonify({'success': True, 'message': 'Plate recorded successfully'}), 201
     except Exception as e:
