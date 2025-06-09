@@ -17,7 +17,7 @@ except ImportError:
 
 # OCR imports with fallback
 try:
-    from ocr_receiver import detect_and_crop_plate, recognize_characters_with_yolo
+    from ..services.ocr_service import detect_and_crop_plate, recognize_characters_with_yolo
 except ImportError:
     def detect_and_crop_plate(img): return None
     def recognize_characters_with_yolo(img): return "NO_OCR"
@@ -97,8 +97,7 @@ def get_all_history():
         with get_db_connection() as (db, cursor):
             # Check if user_id column exists in history table
             try:
-                sql = """SELECT h.subject, h.plate, h.description, h.date, 
-                               u.username 
+                sql = """SELECT h.subject, h.plate, h.description, h.date, u.username 
                         FROM history h 
                         LEFT JOIN users u ON h.user_id = u.user_id 
                         ORDER BY h.date DESC"""
