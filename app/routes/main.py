@@ -20,16 +20,3 @@ def health_check():
             'api': '/api/*'
         }
     })
-
-@main_bp.route('/endpoints')
-def list_endpoints():
-    """List all available endpoints."""
-    from flask import current_app
-    endpoints = []
-    for rule in current_app.url_map.iter_rules():
-        endpoints.append({
-            'endpoint': rule.rule,
-            'methods': list(rule.methods - {'HEAD', 'OPTIONS'}),
-            'blueprint': rule.endpoint.split('.')[0] if '.' in rule.endpoint else 'main'
-        })
-    return jsonify({'endpoints': endpoints})

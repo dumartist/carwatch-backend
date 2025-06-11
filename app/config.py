@@ -17,9 +17,4 @@ class Config:
     BCRYPT_ROUNDS = int(os.getenv("BCRYPT_ROUNDS", "12"))
     
     # Application settings
-    DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-    TESTING = False
-    
-    # File upload settings
-    # UPLOAD_FOLDER = 'uploads'
-    # MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+    DEBUG = False

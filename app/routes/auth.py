@@ -61,6 +61,7 @@ def login():
             user = cursor.fetchone()
 
             if user and check_password(password, user['password']):
+                session.permanent = True
                 session['user_id'] = user['user_id']
                 session['username'] = user['username']
                 return jsonify({

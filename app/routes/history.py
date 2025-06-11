@@ -7,16 +7,19 @@ import datetime
 import logging
 from ..services.db_upload import db_upload_image
 
-# Import utilities with fallback
+try:
+    from ..utils.blob_utils import blob_to_jpg_by_latest
+except ImportError:
+    def blob_to_jpg_by_latest(**kwargs):
+        return {'success': False, 'message': 'blob_utils not available'}
+
 try:
     from ..utils.database import get_db_connection
 except ImportError:
     import sys
-    import os
     sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     from utils import get_db_connection
 
-# OCR imports with fallback
 try:
     from ..services.ocr_service import detect_and_crop_plate, recognize_characters_with_yolo
 except ImportError:
@@ -36,85 +39,69 @@ def upload_image():
         return jsonify({'success': False, 'message': 'No image part in the request'}), 400
 
     file = request.files['image']
-    status = request.args.get('status', 'unknown') 
+    status = request.args.get('status', 'unknown')
 
     if file.filename == '':
         return jsonify({'success': False, 'message': 'No selected file'}), 400
 
-    if file:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
-        original_filename = file.filename
-        file_extension = os.path.splitext(original_filename)[1]
-        filename = f"image_{timestamp}{file_extension}"
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        
-        image_bytes = file.read()
-        
-        with open(filepath, 'wb') as f:
-            f.write(image_bytes)
-        logger.info(f"Image saved temporarily to {filepath} with status '{status}'")
-
-        # Upload to database FIRST, before OCR processing
-        db_upload_result = db_upload_image(filename)
-        if db_upload_result['success']:
-            logger.info(f"Image uploaded to database: {db_upload_result['message']}")
-        else:
-            logger.warning(f"Failed to upload image to database: {db_upload_result['message']}")
-
-        try:
-            img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
-            if img_np is None:
-                raise ValueError("Could not decode image.")
-        except Exception as e:
-            os.remove(filepath) 
-            return jsonify({'success': False, 'message': f'Error decoding image: {e}'}), 500
-
-        # Process OCR after database upload
-        cropped_plate = detect_and_crop_plate(img_np)
-        plate_number = ""
-        if cropped_plate is not None:
-            plate_number = recognize_characters_with_yolo(cropped_plate)
-            logger.info(f"OCR Result: {plate_number}")
-        else:
-            logger.info("OCR could not be performed as no plate was detected.")
-
-        description = "car is available" if status == "entering" else "car is being use"
-        subject = "Vehicle Entry" if status == "entering" else ("Vehicle Exit" if status == "leaving" else "Unknown Status")
-
-        try:
-            with get_db_connection() as (db, cursor):
-                sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
-                val = (plate_number, subject, description)
-                cursor.execute(sql, val)
-                db.commit()
-                message = 'Image received, uploaded to database, OCR processed, and data recorded successfully.'
-                status_code = 201
-        except Exception as e:
-            logger.error(f"Database recording error: {e}")
-            message = f'Failed to record data to database: {e}'
-            status_code = 500
-        finally:
-            # Clean up temporary file
-            os.remove(filepath)
-
-        response_data = {
-            'success': status_code == 201, 
-            'message': message, 
-            'plate_number': plate_number, 
-            'status': status
-        }
-        
-        # Include database upload status in response
-        if db_upload_result['success']:
-            response_data['image_uploaded'] = True
-            response_data['image_filename'] = db_upload_result['filename']
-        else:
-            response_data['image_uploaded'] = False
-            response_data['upload_error'] = db_upload_result['message']
-
-        return jsonify(response_data), status_code
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+    original_filename = file.filename
+    file_extension = os.path.splitext(original_filename)[1]
+    filename = f"image_{timestamp}{file_extension}"
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     
-    return jsonify({'success': False, 'message': 'Something went wrong.'}), 500
+    image_bytes = file.read()
+    
+    with open(filepath, 'wb') as f:
+        f.write(image_bytes)
+
+    db_upload_result = db_upload_image(filename)
+
+    try:
+        img_np = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+        if img_np is None:
+            raise ValueError("Could not decode image.")
+    except Exception as e:
+        os.remove(filepath) 
+        return jsonify({'success': False, 'message': f'Error decoding image: {e}'}), 500
+
+    cropped_plate = detect_and_crop_plate(img_np)
+    plate_number = ""
+    if cropped_plate is not None:
+        plate_number = recognize_characters_with_yolo(cropped_plate)
+        logger.info(f"OCR Result: {plate_number}")
+
+    description = "car is available" if status == "entering" else "car is being use"
+    subject = "Vehicle Entry" if status == "entering" else ("Vehicle Exit" if status == "leaving" else "Unknown Status")
+
+    try:
+        with get_db_connection() as (db, cursor):
+            sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
+            cursor.execute(sql, (plate_number, subject, description))
+            db.commit()
+            message = 'Image received, uploaded to database, OCR processed, and data recorded successfully.'
+            status_code = 201
+    except Exception as e:
+        logger.error(f"Database recording error: {e}")
+        message = f'Failed to record data to database: {e}'
+        status_code = 500
+    finally:
+        os.remove(filepath)
+
+    response_data = {
+        'success': status_code == 201, 
+        'message': message, 
+        'plate_number': plate_number, 
+        'status': status,
+        'image_uploaded': db_upload_result['success']
+    }
+    
+    if db_upload_result['success']:
+        response_data['image_filename'] = db_upload_result['filename']
+    else:
+        response_data['upload_error'] = db_upload_result['message']
+
+    return jsonify(response_data), status_code
 
 @history_bp.route('/history', methods=['GET'])
 def get_all_history():
@@ -168,3 +155,29 @@ def record_plate():
     except Exception as e:
         logger.error(f"Database error: {e}")
         return jsonify({'success': False, 'message': 'Recording failed'}), 500
+    
+@history_bp.route('/fetch_img', methods=['POST'])
+def fetch_image():
+    images_dir = 'images'
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+
+    try:
+        result = blob_to_jpg_by_latest(table='images', output_path=None)
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'message': result['message'],
+                'filename': os.path.basename(result['output_path']),
+                'filepath': result['output_path'],
+                'file_size': result['file_size'],
+                'image_size': result.get('image_size'),
+                'upload_date': result.get('upload_date')
+            }), 200
+        else:
+            return jsonify({'success': False, 'message': result['message']}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in fetch_image: {e}")
+        return jsonify({'success': False, 'message': f'Error fetching image: {str(e)}'}), 500
