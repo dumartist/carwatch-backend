@@ -68,7 +68,7 @@ def blob_to_jpg(table, id_value, output_path, id_column='id', image_column='imag
         logger.error(f"Error in blob_to_jpg: {e}")
         return {'success': False, 'message': f'Unexpected error: {e}'}
 
-def blob_to_jpg_by_latest(table='images', output_path=None, image_column='image_data', date_column='upload_date'):
+def blob_to_jpg_by_latest(table='images', output_path=None, image_column='image_data', date_column='upload_date', cleanup_old=True):
     try:
         with get_db_connection() as (db, cursor):
             sql = f"SELECT {image_column}, {date_column} FROM {table} ORDER BY {date_column} DESC LIMIT 1"
@@ -104,6 +104,26 @@ def blob_to_jpg_by_latest(table='images', output_path=None, image_column='image_
             output_dir = os.path.dirname(output_path)
             if output_dir and not os.path.exists(output_dir):
                 os.makedirs(output_dir)
+            
+            # Cleanup logic: Remove old images in the directory if requested
+            if cleanup_old and output_dir:
+                try:
+                    for filename in os.listdir(output_dir):
+                        if filename.startswith('image_') and filename.endswith('.jpg'):
+                            old_file_path = os.path.join(output_dir, filename)
+                            if os.path.exists(old_file_path) and old_file_path != output_path:
+                                os.remove(old_file_path)
+                                logger.info(f"Removed old image: {old_file_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Error during cleanup: {cleanup_error}")
+            
+            # If the exact file already exists, check if we need to update it
+            if os.path.exists(output_path) and cleanup_old:
+                try:
+                    os.remove(output_path)
+                    logger.info(f"Removed existing image: {output_path}")
+                except Exception as remove_error:
+                    logger.warning(f"Error removing existing file: {remove_error}")
 
             try:
                 image = Image.open(io.BytesIO(image_data))

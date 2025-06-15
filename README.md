@@ -41,7 +41,7 @@ carwatch-backend/
 │   ├── best_LPD.pt           # License Plate Detection model
 │   ├── best_OCR.pt           # Character Recognition model
 │   └── README.md             # Model documentation
-├── logs/                      # Application logs (auto-rotating)
+├── logs/                      # Application logs
 ├── uploads/                   # Temporary image storage
 ├── images/                    # Processed image output
 ├── wsgi.py                   # Optimized WSGI entry point
@@ -357,19 +357,39 @@ Content-Type: application/json
 
 #### Fetch Latest Image from Database
 ```http
-POST /api/fetch_img
+GET /api/fetch_img
 ```
+
+**Response:**
+Returns raw JPEG binary data with appropriate headers.
+
+**Headers:**
+- `Content-Type: image/jpeg`
+- `Content-Length: [image_size_bytes]`
+- `Cache-Control: no-cache`
+
+**Error Response:**
+```json
+{
+    "success": false,
+    "message": "No images found in database"
+}
+```
+
+#### Cleanup Old Images
+```http
+POST /api/cleanup_images?max_age_hours=24
+```
+
+**Parameters:**
+- `max_age_hours`: Maximum age in hours for keeping temporary images (default: 24)
 
 **Response:**
 ```json
 {
     "success": true,
-    "message": "Latest image saved to images/image_20250615123456.jpg",
-    "filename": "image_20250615123456.jpg",
-    "filepath": "images/image_20250615123456.jpg",
-    "file_size": 252366,
-    "image_size": [1600, 1200],
-    "upload_date": "2025-06-15T12:34:56"
+    "message": "Cleanup completed. Removed 3 old image(s)",
+    "cleaned_files": 3
 }
 ```
 
@@ -423,11 +443,18 @@ Pillow==10.1.0                  # Image processing
 9. **Cleanup**: Temporary files automatically removed
 10. **Response**: Processed results returned to client
 
+### Image Fetching Flow
+1. **Request**: Client calls `GET /api/fetch_img`
+2. **Database Query**: Latest image retrieved directly from database
+3. **Binary Response**: Raw JPEG data returned with appropriate headers
+4. **No Caching**: Each request fetches fresh data from database
+
 ### Performance Metrics
 - **Processing Speed**: ~20-30% faster than previous version
 - **Memory Usage**: ~30-40% reduction through optimization
 - **Model Loading**: Single load per worker (preload_app=True)
 - **File Handling**: Immediate cleanup prevents storage bloat
+- **Image Fetching**: Direct binary response eliminates file system operations
 
 ## 🛠️ Development
 
@@ -479,6 +506,12 @@ curl -X GET http://localhost:8000/health
 # Test OCR upload
 curl -X POST -F "image=@test_image.jpg" \
      "http://localhost:8000/api/upload_image?status=entering"
+
+# Test image fetching (returns binary JPEG data)
+curl -X GET http://localhost:8000/api/fetch_img --output latest_image.jpg
+
+# Test image cleanup
+curl -X POST "http://localhost:8000/api/cleanup_images?max_age_hours=24"
 ```
 
 ## 🚀 Deployment
@@ -694,6 +727,12 @@ Monitor these metrics for optimal performance:
    Solution: Compress image or increase limit in db_upload.py
    ```
 
+6. **Image Fetch Returns JSON Instead of Binary**
+   ```
+   Error: Expected image data but got JSON error message
+   Solution: Check if images exist in database; endpoint returns JSON only on error
+   ```
+
 ### Performance Optimization Tips
 
 - **Image Preprocessing**: Resize images to 640x480 before OCR for faster processing
@@ -715,28 +754,31 @@ python -c "from app.services.ocr_service import load_yolo_models; print('Models 
 python -c "from app.utils.database import get_db_connection; print('Database connected')"
 ```
 
-## 🎯 Performance Improvements (v1.0.0)
+## 🎯 Performance Improvements (v1.1.0)
 
 ### Code Optimization
-- **40% Smaller Codebase**: Removed redundant code and comments
-- **50% Faster Startup**: Eliminated unnecessary imports and simplified initialization
-- **Memory Efficient**: Using `opencv-python` (full) instead of headless for better compatibility
+- **Simplified Image Fetching**: Direct binary response eliminates temporary file creation
+- **Removed Caching Complexity**: Streamlined code by removing unused caching mechanisms
+- **Cleaner API**: Consistent RESTful endpoints (GET for fetching, POST for operations)
+- **Memory Efficient**: No temporary files for image fetching operations
 
 ### Runtime Optimizations
 - **20-30% Faster OCR**: Streamlined image processing pipeline
 - **15-25% Faster Database**: Optimized queries and connection handling
-- **30-40% Lower Memory**: Threading over multiprocessing, efficient cleanup
+- **Direct Binary Transfer**: No file system operations for image serving
+- **Automatic Cleanup**: Prevents disk space accumulation
 
 ### Storage Optimization
 - **Auto-cleanup**: Temporary files removed immediately after processing
-- **BLOB Compression**: Efficient image storage in database
+- **BLOB Efficiency**: Direct database-to-client image transfer
 - **Log Rotation**: Prevents disk space issues
+- **Cleanup Endpoint**: Manual cleanup of old temporary images
 
 ## 🔮 Future Enhancements
 
 **High Priority:**
-- [ ] Redis caching for OCR results
-- [ ] Image compression before processing
+- [✔] Redis caching for OCR results
+- [✔] Image compression before processing
 - [ ] Rate limiting for API endpoints
 - [ ] Comprehensive test suite
 
@@ -779,7 +821,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Version**: 1.1.0 (Optimized)  
+**Version**: 1.2.0 (Optimized & Simplified)  
 **Last Updated**: June 15, 2025  
-**Maintainer**: CarWatch Development Team
-**Performance**: 40-50% smaller, 20-30% faster, 30-40% less memory usage
+**Maintainer**: CarWatch Development Team  
+**Key Changes**: Simplified image fetching, direct binary responses, cleanup utilities

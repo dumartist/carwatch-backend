@@ -1,17 +1,12 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, send_from_directory, Response
 import bleach
 import os
 import cv2
 import numpy as np
 import datetime
 import logging
+import time
 from ..services.db_upload import db_upload_image
-
-try:
-    from ..utils.blob_utils import blob_to_jpg_by_latest
-except ImportError:
-    def blob_to_jpg_by_latest(**kwargs):
-        return {'success': False, 'message': 'blob_utils not available'}
 
 try:
     from ..utils.database import get_db_connection
@@ -32,6 +27,10 @@ history_bp = Blueprint('history', __name__)
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+
+IMAGES_FOLDER = 'images'
+if not os.path.exists(IMAGES_FOLDER):
+    os.makedirs(IMAGES_FOLDER)
 
 @history_bp.route('/upload_image', methods=['POST'])
 def upload_image():
@@ -73,7 +72,7 @@ def upload_image():
 
     description = "car is available" if status == "entering" else "car is being use"
     subject = "Vehicle Entry" if status == "entering" else ("Vehicle Exit" if status == "leaving" else "Unknown Status")
-
+    
     try:
         with get_db_connection() as (db, cursor):
             sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
@@ -156,28 +155,90 @@ def record_plate():
         logger.error(f"Database error: {e}")
         return jsonify({'success': False, 'message': 'Recording failed'}), 500
     
-@history_bp.route('/fetch_img', methods=['POST'])
+@history_bp.route('/fetch_img', methods=['GET'])
 def fetch_image():
-    images_dir = 'images'
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir)
-
     try:
-        result = blob_to_jpg_by_latest(table='images', output_path=None)
-        
-        if result['success']:
-            return jsonify({
-                'success': True,
-                'message': result['message'],
-                'filename': os.path.basename(result['output_path']),
-                'filepath': result['output_path'],
-                'file_size': result['file_size'],
-                'image_size': result.get('image_size'),
-                'upload_date': result.get('upload_date')
-            }), 200
-        else:
-            return jsonify({'success': False, 'message': result['message']}), 500
+        with get_db_connection() as (db, cursor):
+            sql = "SELECT image_data, upload_date FROM images ORDER BY upload_date DESC LIMIT 1"
+            cursor.execute(sql)
+            result = cursor.fetchone()
+            
+            if not result:
+                return jsonify({'success': False, 'message': 'No images found in database'}), 404
+            
+            # Extract image data and upload date
+            if isinstance(result, dict):
+                image_data = result.get('image_data')
+                upload_date = result.get('upload_date')
+            elif isinstance(result, (tuple, list)) and len(result) >= 2:
+                image_data = result[0]
+                upload_date = result[1]
+            else:
+                return jsonify({'success': False, 'message': 'Unexpected database result format'}), 500
+            
+            if not image_data:
+                return jsonify({'success': False, 'message': 'No image data found'}), 404
+            else:
+                response = Response(
+                image_data,
+                mimetype='image/jpeg',
+                headers={
+                    'Content-Type': 'image/jpeg',
+                    'Content-Length': str(len(image_data)),
+                    'Cache-Control': 'no-cache'
+                }
+            )
+            return response
             
     except Exception as e:
         logger.error(f"Error in fetch_image: {e}")
         return jsonify({'success': False, 'message': f'Error fetching image: {str(e)}'}), 500
+
+def cleanup_temp_images(max_age_hours=24):
+    try:
+        images_dir = 'images'
+        if not os.path.exists(images_dir):
+            return {'success': True, 'message': 'No images directory found', 'cleaned_files': 0}
+        
+        import time
+        current_time = time.time()
+        max_age_seconds = max_age_hours * 3600
+        cleaned_files = 0
+        
+        for filename in os.listdir(images_dir):
+            if filename.startswith('image_') and filename.endswith('.jpg'):
+                filepath = os.path.join(images_dir, filename)
+                if os.path.isfile(filepath):
+                    file_age = current_time - os.path.getmtime(filepath)
+                    if file_age > max_age_seconds:
+                        try:
+                            os.remove(filepath)
+                            cleaned_files += 1
+                            logger.info(f"Cleaned up old image: {filepath}")
+                        except Exception as e:
+                            logger.warning(f"Could not remove {filepath}: {e}")
+        
+        return {
+            'success': True,
+            'message': f'Cleanup completed. Removed {cleaned_files} old image(s)',
+            'cleaned_files': cleaned_files
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+        return {'success': False, 'message': f'Cleanup failed: {str(e)}', 'cleaned_files': 0}
+
+@history_bp.route('/cleanup_images', methods=['POST'])
+def cleanup_images():
+    try:
+        max_age = int(request.args.get('max_age_hours', 24))
+        result = cleanup_temp_images(max_age)
+        
+        status_code = 200 if result['success'] else 500
+        return jsonify(result), status_code
+        
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid max_age_hours parameter'}), 400
+    except Exception as e:
+        logger.error(f"Error in cleanup endpoint: {e}")
+        return jsonify({'success': False, 'message': f'Cleanup failed: {str(e)}'}), 500
