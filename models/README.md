@@ -71,15 +71,7 @@ Here are examples of the OCR model in action, showing character detection and re
 
 ## Usage in Application
 
-The models are automatically loaded when the application starts:
-
-python
-# License Plate Detection
-detect_and_crop_plate(image)  # Uses best_LPD.pt
-
-# Character Recognition  
-recognize_characters_with_yolo(cropped_plate)  # Uses best_OCR.pt
-
+The models are automatically loaded when the application starts.
 
 ## Model Specifications
 
