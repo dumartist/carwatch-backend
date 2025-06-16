@@ -150,6 +150,8 @@ cp your_best_LPD.pt models/best_LPD.pt
 cp your_best_OCR.pt models/best_OCR.pt
 ```
 
+> 📋 **For detailed model information, training metrics, and performance examples, see [models/README.md](models/README.md)**
+
 ### 7. Run Application
 ```bash
 # Development mode
