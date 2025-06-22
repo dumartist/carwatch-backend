@@ -1,23 +1,36 @@
 import os
 import logging
+
+os.environ['TORCH_SERIALIZATION_WEIGHTS_ONLY'] = '0'
+
 import torch
 from ultralytics import YOLO
 
 try:
     from ultralytics.nn.tasks import DetectionModel
     from ultralytics.nn.modules.head import Detect
-    from ultralytics.nn.modules.conv import Conv
-    from ultralytics.nn.modules.block import C2f, SPPF
+    from ultralytics.nn.modules.conv import Conv, Concat
+    from ultralytics.nn.modules.block import C2f, SPPF, Bottleneck, DFL
     
+    # Add PyTorch core modules needed for YOLO model loading
     torch.serialization.add_safe_globals([
-        DetectionModel, Detect, Conv, C2f, SPPF,
+        DetectionModel, Detect, Conv, C2f, SPPF, Bottleneck, Concat, DFL,
+        torch.nn.modules.container.Sequential,
+        torch.nn.modules.container.ModuleList,
+        torch.nn.modules.container.ModuleDict,
+        torch.nn.modules.activation.SiLU,
+        torch.nn.modules.batchnorm.BatchNorm2d,
+        torch.nn.modules.conv.Conv2d,
+        torch.nn.modules.pooling.MaxPool2d,
+        torch.nn.modules.upsampling.Upsample,
     ])
+except ImportError as e:
     logger = logging.getLogger(__name__)
-    logger.info("PyTorch safe globals configured for YOLO models")
-except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.warning("Using fallback: setting TORCH_SERIALIZATION_WEIGHTS_ONLY=0")
-    os.environ['TORCH_SERIALIZATION_WEIGHTS_ONLY'] = '0'
+    logging.error(f"Failed to import YOLO modules: {e}")
+    raise
+
+logger = logging.getLogger(__name__)
+logger.info("PyTorch safe globals configured for YOLO models")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LPD_MODEL_PATH = os.path.join(BASE_DIR, "models", "best_LPD.pt")

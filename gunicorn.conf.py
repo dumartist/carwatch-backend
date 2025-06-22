@@ -2,6 +2,7 @@ import multiprocessing
 import os
 
 bind = "127.0.0.1:9036"
+bind = "0.0.0.0:9036"
 backlog = 2048
 
 cpu_count = multiprocessing.cpu_count()
