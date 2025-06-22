@@ -1,18 +1,23 @@
 import os
 import logging
 import torch
-
-torch.serialization.add_safe_globals([
-    'ultralytics.nn.tasks.DetectionModel',
-    'ultralytics.nn.modules.head.Detect',
-    'ultralytics.nn.modules.conv.Conv',
-    'ultralytics.nn.modules.block.C2f',
-    'ultralytics.nn.modules.block.SPPF',
-])
-
 from ultralytics import YOLO
 
-logger = logging.getLogger(__name__)
+try:
+    from ultralytics.nn.tasks import DetectionModel
+    from ultralytics.nn.modules.head import Detect
+    from ultralytics.nn.modules.conv import Conv
+    from ultralytics.nn.modules.block import C2f, SPPF
+    
+    torch.serialization.add_safe_globals([
+        DetectionModel, Detect, Conv, C2f, SPPF,
+    ])
+    logger = logging.getLogger(__name__)
+    logger.info("PyTorch safe globals configured for YOLO models")
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("Using fallback: setting TORCH_SERIALIZATION_WEIGHTS_ONLY=0")
+    os.environ['TORCH_SERIALIZATION_WEIGHTS_ONLY'] = '0'
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LPD_MODEL_PATH = os.path.join(BASE_DIR, "models", "best_LPD.pt")
