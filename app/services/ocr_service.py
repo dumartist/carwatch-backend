@@ -1,5 +1,15 @@
 import os
 import logging
+import torch
+
+torch.serialization.add_safe_globals([
+    'ultralytics.nn.tasks.DetectionModel',
+    'ultralytics.nn.modules.head.Detect',
+    'ultralytics.nn.modules.conv.Conv',
+    'ultralytics.nn.modules.block.C2f',
+    'ultralytics.nn.modules.block.SPPF',
+])
+
 from ultralytics import YOLO
 
 logger = logging.getLogger(__name__)
