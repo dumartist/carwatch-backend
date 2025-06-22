@@ -5,7 +5,10 @@ bind = "127.0.0.1:9036"
 backlog = 2048
 
 cpu_count = multiprocessing.cpu_count()
-workers = min(cpu_count * 2 + 1, 4)
+if cpu_count == 1:
+    workers = 1  # For single-core: 1-2 workers max
+else:
+    workers = multiprocessing.cpu_count() * 2 + 1
 
 worker_class = "gthread"
 threads = 2
@@ -17,15 +20,15 @@ max_requests_jitter = 20
 worker_tmp_dir = "/tmp"
 preload_app = True
 
-accesslog = "/home/ubuntu/carwatch-backend/logs/access.log"
-errorlog = "/home/ubuntu/carwatch-backend/logs/error.log"
+accesslog = "logs/access.log"
+errorlog = "logs/error.log"
 loglevel = "info"
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
 proc_name = "carwatch-backend"
 daemon = False
-pidfile = "/home/ubuntu/carwatch-backend/logs/carwatch-backend.pid"
-user = "ubuntu"
-group = "ubuntu"
+pidfile = "logs/carwatch-backend.pid"
+user = None
+group = None
 
-os.makedirs('/home/ubuntu/carwatch-backend/logs', exist_ok=True)
+os.makedirs('logs', exist_ok=True)
