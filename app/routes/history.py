@@ -48,9 +48,8 @@ def upload_image():
     file_extension = os.path.splitext(original_filename)[1]
     filename = f"image_{timestamp}{file_extension}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-    
+
     image_bytes = file.read()
-    
     with open(filepath, 'wb') as f:
         f.write(image_bytes)
 
@@ -61,7 +60,7 @@ def upload_image():
         if img_np is None:
             raise ValueError("Could not decode image.")
     except Exception as e:
-        os.remove(filepath) 
+        os.remove(filepath)
         return jsonify({'success': False, 'message': f'Error decoding image: {e}'}), 500
 
     cropped_plate = detect_and_crop_plate(img_np)
@@ -72,11 +71,16 @@ def upload_image():
 
     description = "car is available" if status == "entering" else "car is being use"
     subject = "Vehicle Entry" if status == "entering" else ("Vehicle Exit" if status == "leaving" else "Unknown Status")
-    
+
     try:
+        image_id = db_upload_result.get('image_id')  # Boleh None
         with get_db_connection() as (db, cursor):
-            sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
-            cursor.execute(sql, (plate_number, subject, description))
+            if image_id:
+                sql = "INSERT INTO history (plate, subject, description, image_id) VALUES (%s, %s, %s, %s)"
+                cursor.execute(sql, (plate_number, subject, description, image_id))
+            else:
+                sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
+                cursor.execute(sql, (plate_number, subject, description))
             db.commit()
             message = 'Image received, uploaded to database, OCR processed, and data recorded successfully.'
             status_code = 201
@@ -88,15 +92,16 @@ def upload_image():
         os.remove(filepath)
 
     response_data = {
-        'success': status_code == 201, 
-        'message': message, 
-        'plate_number': plate_number, 
+        'success': status_code == 201,
+        'message': message,
+        'plate_number': plate_number,
         'status': status,
         'image_uploaded': db_upload_result['success']
     }
-    
+
     if db_upload_result['success']:
         response_data['image_filename'] = db_upload_result['filename']
+        response_data['image_id'] = db_upload_result.get('image_id')
     else:
         response_data['upload_error'] = db_upload_result['message']
 
@@ -106,55 +111,63 @@ def upload_image():
 def get_all_history():
     try:
         with get_db_connection() as (db, cursor):
-            # Check if user_id column exists in history table
-            try:
-                sql = """SELECT h.subject, h.plate, h.description, h.date, u.username 
-                        FROM history h 
-                        LEFT JOIN users u ON h.user_id = u.user_id 
-                        ORDER BY h.date DESC"""
-                cursor.execute(sql)
-                history_data = cursor.fetchall()
-            except Exception:
-                # Fallback to original query if user_id column doesn't exist
-                sql = "SELECT subject, plate, description, date FROM history ORDER BY date DESC"
-                cursor.execute(sql)
-                history_data = cursor.fetchall()
-            
-            return jsonify({'success': True, 'message': 'History retrieved', 'data': history_data}), 200
+            sql = """
+                SELECT h.subject, h.plate, h.description, h.date, h.image_id
+                FROM history h
+                ORDER BY h.date DESC
+            """
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            history_list = []
+            for row in rows:
+                history_list.append({
+                    'subject': row['subject'],
+                    'plate': row['plate'],
+                    'description': row['description'],
+                    'date': row['date'],
+                    'image_id': row.get('image_id')
+                })
+            return jsonify({'success': True, 'message': 'History retrieved', 'data': history_list}), 200
     except Exception as e:
         logger.error(f"History error: {e}")
         return jsonify({'success': False, 'message': 'Error fetching history'}), 500
 
-@history_bp.route('/plate', methods=['POST'])
-def record_plate():
-    data = request.get_json()
-    plate = data.get('plate')
-    subject = data.get('subject')
-    description = data.get('description')
-
-    if not all([plate, subject, description]):
-        return jsonify({'success': False, 'message': 'Missing required fields'}), 400
-
-    # Get user_id from session if available
-    user_id = session.get('user_id', None)
-
+@history_bp.route('/get_image/<int:image_id>', methods=['GET'])
+def serve_image_by_id(image_id):
+    logger.info(f"Image request received for ID: {image_id}")
     try:
         with get_db_connection() as (db, cursor):
-            # Try to insert with user_id first
-            try:
-                sql = "INSERT INTO history (plate, subject, description, user_id) VALUES (%s, %s, %s, %s)"
-                cursor.execute(sql, (bleach.clean(plate), bleach.clean(subject), bleach.clean(description), user_id))
-            except Exception:
-                # Fallback to original schema without user_id
-                sql = "INSERT INTO history (plate, subject, description) VALUES (%s, %s, %s)"
-                cursor.execute(sql, (bleach.clean(plate), bleach.clean(subject), bleach.clean(description)))
-            
-            db.commit()
-            return jsonify({'success': True, 'message': 'Plate recorded successfully'}), 201
+            cursor.execute("SELECT image_data, file_type FROM images WHERE image_id = %s", (image_id,))
+            result = cursor.fetchone()
+            if result:
+                logger.info(f"Fetched image data for ID {image_id}: keys={list(result.keys())}")
+            else:
+                logger.warning(f"No image found in DB for ID {image_id}")
+
+
+            if not result:
+                logger.warning(f"No result found for image_id={image_id}")
+                return jsonify({'success': False, 'message': 'Image not found'}), 404
+
+            image_data = result['image_data']
+            file_type = result['file_type']
+
+            if not image_data:
+                logger.warning(f"Empty image_data for image_id={image_id}")
+                return jsonify({'success': False, 'message': 'Image data missing'}), 404
+
+            return Response(
+                image_data,
+                mimetype=file_type or 'image/jpeg',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'Content-Length': str(len(image_data))
+                }
+            )
     except Exception as e:
-        logger.error(f"Database error: {e}")
-        return jsonify({'success': False, 'message': 'Recording failed'}), 500
-    
+        logger.error(f"Error serving image by ID: {e}")
+        return jsonify({'success': False, 'message': 'Internal server error'}), 500
+
 @history_bp.route('/fetch_img', methods=['GET'])
 def fetch_image():
     try:
@@ -162,24 +175,10 @@ def fetch_image():
             sql = "SELECT image_data, upload_date FROM images ORDER BY upload_date DESC LIMIT 1"
             cursor.execute(sql)
             result = cursor.fetchone()
-            
             if not result:
                 return jsonify({'success': False, 'message': 'No images found in database'}), 404
-            
-            # Extract image data and upload date
-            if isinstance(result, dict):
-                image_data = result.get('image_data')
-                upload_date = result.get('upload_date')
-            elif isinstance(result, (tuple, list)) and len(result) >= 2:
-                image_data = result[0]
-                upload_date = result[1]
-            else:
-                return jsonify({'success': False, 'message': 'Unexpected database result format'}), 500
-            
-            if not image_data:
-                return jsonify({'success': False, 'message': 'No image data found'}), 404
-            else:
-                response = Response(
+            image_data = result[0]
+            return Response(
                 image_data,
                 mimetype='image/jpeg',
                 headers={
@@ -188,23 +187,33 @@ def fetch_image():
                     'Cache-Control': 'no-cache'
                 }
             )
-            return response
-            
     except Exception as e:
         logger.error(f"Error in fetch_image: {e}")
         return jsonify({'success': False, 'message': f'Error fetching image: {str(e)}'}), 500
+
+@history_bp.route('/cleanup_images', methods=['POST'])
+def cleanup_images():
+    try:
+        max_age = int(request.args.get('max_age_hours', 24))
+        result = cleanup_temp_images(max_age)
+        status_code = 200 if result['success'] else 500
+        return jsonify(result), status_code
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid max_age_hours parameter'}), 400
+    except Exception as e:
+        logger.error(f"Error in cleanup endpoint: {e}")
+        return jsonify({'success': False, 'message': f'Cleanup failed: {str(e)}'}), 500
 
 def cleanup_temp_images(max_age_hours=24):
     try:
         images_dir = 'images'
         if not os.path.exists(images_dir):
             return {'success': True, 'message': 'No images directory found', 'cleaned_files': 0}
-        
-        import time
+
         current_time = time.time()
         max_age_seconds = max_age_hours * 3600
         cleaned_files = 0
-        
+
         for filename in os.listdir(images_dir):
             if filename.startswith('image_') and filename.endswith('.jpg'):
                 filepath = os.path.join(images_dir, filename)
@@ -214,31 +223,14 @@ def cleanup_temp_images(max_age_hours=24):
                         try:
                             os.remove(filepath)
                             cleaned_files += 1
-                            logger.info(f"Cleaned up old image: {filepath}")
                         except Exception as e:
                             logger.warning(f"Could not remove {filepath}: {e}")
-        
+
         return {
             'success': True,
             'message': f'Cleanup completed. Removed {cleaned_files} old image(s)',
             'cleaned_files': cleaned_files
         }
-        
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
         return {'success': False, 'message': f'Cleanup failed: {str(e)}', 'cleaned_files': 0}
-
-@history_bp.route('/cleanup_images', methods=['POST'])
-def cleanup_images():
-    try:
-        max_age = int(request.args.get('max_age_hours', 24))
-        result = cleanup_temp_images(max_age)
-        
-        status_code = 200 if result['success'] else 500
-        return jsonify(result), status_code
-        
-    except ValueError:
-        return jsonify({'success': False, 'message': 'Invalid max_age_hours parameter'}), 400
-    except Exception as e:
-        logger.error(f"Error in cleanup endpoint: {e}")
-        return jsonify({'success': False, 'message': f'Cleanup failed: {str(e)}'}), 500

@@ -49,11 +49,13 @@ def db_upload_image(image_filename):
                 db.commit()
 
                 logger.info(f"Uploaded {image_filename} as {format_type} ({file_size} bytes)")
+                image_id = cursor.lastrowid
                 return {
                     'success': True,
                     'message': f'Image uploaded successfully as {format_type}',
                     'filename': image_filename,
-                    'file_size': file_size
+                    'file_size': file_size,
+                    'image_id': image_id
                 }
 
         except mysql.connector.Error as db_error:
