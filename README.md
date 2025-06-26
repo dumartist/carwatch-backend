@@ -13,9 +13,8 @@ An optimized, production-ready Flask backend service for vehicle license plate r
 - 📁 **Image Processing**: BLOB storage and JPEG conversion utilities
 - 🛡️ **Input Sanitization**: Comprehensive input validation and cleaning
 - 📝 **Structured Logging**: Rotating logs with configurable levels
-- ⚡ **Performance Optimized**: 40-50% smaller footprint, 20-30% faster processing
 
-## 📁 Project Structure
+## 📁 Project Structure 
 
 ```
 carwatch-backend/
@@ -57,8 +56,11 @@ carwatch-backend/
 - **Python**: 3.8 or higher
 - **Database**: MySQL 5.7+ or MariaDB 10.3+
 - **Models**: YOLOv8 model files (`best_LPD.pt`, `best_OCR.pt`)
-- **Memory**: Minimum 2GB RAM (optimized for resource efficiency)
-- **Storage**: 500MB+ free space (reduced from 1GB through optimization)
+
+## 📚 Additional Documentation
+
+- 🤖 **[Model Documentation](models/README.md)** - Detailed information about YOLO models, training metrics, and performance examples
+- 🐧 **[Ubuntu Setup Guide](Ubuntu_setup.md)** - Complete Ubuntu/Linux installation and configuration guide
 
 ## ⚡ Quick Start
 
@@ -109,39 +111,41 @@ DEBUG=False
 ```
 
 ### 5. Set Up Database
-```sql
--- Create database
-CREATE DATABASE carwatch;
 
--- Create users table
-CREATE TABLE users (
-    user_id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(255) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create history table
-CREATE TABLE history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    plate VARCHAR(255),
-    subject VARCHAR(255),
-    description TEXT,
-    date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    user_id INT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL
-);
-
--- Create images table (for BLOB storage)
-CREATE TABLE images (
-    image_id INT AUTO_INCREMENT PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    image_data MEDIUMBLOB NOT NULL,
-    file_size INT NOT NULL,
-    file_type VARCHAR(10) NOT NULL,
-    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+**Import the provided SQL file:**
+```bash
+# Import the complete database structure and procedures
+mysql -u root -p < "carwatch database.sql"
 ```
+
+**Database Structure:**
+The SQL file creates the complete `carwatch` database with the following tables:
+
+- **`users`** - User authentication and management
+  - `user_id` (Primary Key, Auto Increment)
+  - `username` (Unique, Not Null)
+  - `password` (bcrypt hashed)
+  - `created_at` (Timestamp)
+
+- **`history`** - Vehicle tracking records
+  - `history_id` (Primary Key, Auto Increment)
+  - `plate` (License plate number)
+  - `subject` (Entry/Exit status)
+  - `description` (Car being used / Car is available)
+  - `date` (Timestamp)
+  - `user_id` (Foreign Key, nullable)
+  - `image_id` (Foreign Key to images table)
+
+- **`images`** - BLOB storage for processed images
+  - `image_id` (Primary Key, Auto Increment)
+  - `filename` (Image filename)
+  - `image_data` (MEDIUMBLOB - binary image data)
+  - `file_size` (File size in bytes)
+  - `file_type` (Image format)
+  - `upload_date` (Timestamp)
+
+**Stored Procedures:**
+- `clear_old_data(weeks_to_keep)` - Cleanup procedure for old history records
 
 ### 6. Add Model Files
 ```bash
@@ -395,6 +399,25 @@ POST /api/cleanup_images?max_age_hours=24
 }
 ```
 
+## 📝 API Status & Future Development
+
+**Note**: Some API endpoints are included for future development needs and may not be actively used in the current implementation. These endpoints are maintained for potential feature expansion and system extensibility.
+
+**Currently Active Endpoints:**
+- Health check and system status
+- User authentication (login/logout)
+- User registration and account management
+- Username/password updates
+- Account deletion
+- Image upload and OCR processing
+- Basic history retrieval
+- Image fetching from database
+
+**Future Development Endpoints:**
+- Advanced history filtering
+- Comprehensive user management features
+- Automated/Manual image cleanup scheduling for certain timing
+
 ## ⚙️ Configuration
 
 ### Gunicorn Configuration (Production Optimized)
@@ -458,51 +481,12 @@ Pillow==10.1.0                  # Image processing
 - **File Handling**: Immediate cleanup prevents storage bloat
 - **Image Fetching**: Direct binary response eliminates file system operations
 
-## 🛠️ Development
+## 🧪 Testing
 
-### Adding New Features
-
-1. **Create Route Blueprint**
-   ```python
-   # app/routes/new_feature.py
-   from flask import Blueprint
-   
-   new_feature_bp = Blueprint('new_feature', __name__)
-   
-   @new_feature_bp.route('/endpoint')
-   def endpoint():
-       return {'message': 'New feature'}
-   ```
-
-2. **Register Blueprint**
-   ```python
-   # app/__init__.py
-   from .routes.new_feature import new_feature_bp
-   app.register_blueprint(new_feature_bp, url_prefix='/feature')
-   ```
-
-3. **Add Business Logic**
-   ```python
-   # app/services/new_service.py
-   def process_data(data):
-       # Business logic here
-       return processed_data
-   ```
-
-### Code Structure Guidelines
-
-- **Routes**: Handle HTTP requests/responses only
-- **Services**: Contain business logic
-- **Utils**: Provide utility functions
-- **Models**: Define data structures (future enhancement)
-
-### Testing
+### Basic API Testing
 
 ```bash
-# Run with debug mode
-python wsgi.py
-
-# Test endpoints
+# Test health endpoint
 curl -X GET http://localhost:8000/health
 
 # Test OCR upload
@@ -672,158 +656,9 @@ volumes:
   logs:
 ```
 
-## 📊 Monitoring & Logging
-
-### Log Files
-- `logs/access.log`: HTTP access logs (Gunicorn)
-- `logs/error.log`: Application errors and exceptions
-- `logs/app.log`: General application logs with rotation
-
-### Log Management
-- **Rotation**: Automatic rotation at 5MB with 5 backup files
-- **Format**: `%(asctime)s - %(name)s - %(levelname)s - %(message)s`
-- **Levels**: INFO for normal operations, ERROR for issues
-
-### Monitoring Endpoints
-- `GET /health`: Application health status
-- `GET /`: Basic connectivity and version check
-
-### Performance Monitoring
-Monitor these metrics for optimal performance:
-- **Memory Usage**: Should stay under 1GB per worker
-- **Response Time**: OCR processing typically 2-5 seconds
-- **Database Connections**: Monitored via connection pool
-- **Model Loading**: Should only happen once per worker
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-1. **Model Files Missing**
-   ```
-   Error: Failed to load LPD model
-   Solution: Place best_LPD.pt and best_OCR.pt in models/ directory
-   ```
-
-2. **Database Connection Failed**
-   ```
-   Error: Database error
-   Solution: Check database credentials in .env file and ensure MySQL is running
-   ```
-
-3. **Memory Issues**
-   ```
-   Error: Out of memory during OCR processing
-   Solution: Reduce max_workers in gunicorn.conf.py or increase server memory
-   ```
-
-4. **OpenCV Import Errors**
-   ```
-   Error: cv2 module not found
-   Solution: pip install opencv-python==4.10.0.84
-   ```
-
-5. **Image Upload Too Large**
-   ```
-   Error: Image file too large (max 16MB)
-   Solution: Compress image or increase limit in db_upload.py
-   ```
-
-6. **Image Fetch Returns JSON Instead of Binary**
-   ```
-   Error: Expected image data but got JSON error message
-   Solution: Check if images exist in database; endpoint returns JSON only on error
-   ```
-
-### Performance Optimization Tips
-
-- **Image Preprocessing**: Resize images to 640x480 before OCR for faster processing
-- **Model Caching**: Models are preloaded; avoid restarting workers frequently
-- **Database Indexing**: Add indexes on frequently queried columns
-- **Connection Pooling**: Use persistent database connections
-- **Memory Management**: Monitor worker memory usage and restart if needed
-
-### Debug Mode
-```bash
-# Enable debug logging
-export DEBUG=True
-python wsgi.py
-
-# Check model loading
-python -c "from app.services.ocr_service import load_yolo_models; print('Models loaded successfully')"
-
-# Test database connection
-python -c "from app.utils.database import get_db_connection; print('Database connected')"
-```
-
-## 🎯 Performance Improvements (v1.1.0)
-
-### Code Optimization
-- **Simplified Image Fetching**: Direct binary response eliminates temporary file creation
-- **Removed Caching Complexity**: Streamlined code by removing unused caching mechanisms
-- **Cleaner API**: Consistent RESTful endpoints (GET for fetching, POST for operations)
-- **Memory Efficient**: No temporary files for image fetching operations
-
-### Runtime Optimizations
-- **20-30% Faster OCR**: Streamlined image processing pipeline
-- **15-25% Faster Database**: Optimized queries and connection handling
-- **Direct Binary Transfer**: No file system operations for image serving
-- **Automatic Cleanup**: Prevents disk space accumulation
-
-### Storage Optimization
-- **Auto-cleanup**: Temporary files removed immediately after processing
-- **BLOB Efficiency**: Direct database-to-client image transfer
-- **Log Rotation**: Prevents disk space issues
-- **Cleanup Endpoint**: Manual cleanup of old temporary images
-
-## 🔮 Future Enhancements
-
-**High Priority:**
-- [✔] Redis caching for OCR results
-- [✔] Image compression before processing
-- [ ] Rate limiting for API endpoints
-- [ ] Comprehensive test suite
-
-**Medium Priority:**
-- [ ] Real-time WebSocket notifications
-- [ ] Advanced analytics dashboard
-- [ ] API versioning
-
-**Long Term:**
-- [✔] Mobile app integration
-- [✔] Cloud storage integration
-- [ ] Machine learning model updates
-- [ ] Advanced OCR post-processing
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/optimization`)
-3. Make your changes following the coding standards
-4. Test thoroughly (especially OCR functionality)
-5. Update documentation if needed
-6. Submit a pull request
-
-### Development Guidelines
-- Follow PEP 8 Python style guide
-- Maintain backward compatibility
-- Include error handling for all new features
-- Add logging for debugging purposes
-- Update README.md for new features
-
-## 🆘 Support
-
-- **GitHub Issues**: [Create an issue](https://github.com/yourusername/carwatch-backend/issues)
-- **Documentation**: This README and inline code comments
-- **Performance Issues**: Check the troubleshooting section first
-
 ---
 
 **Version**: 1.2.0 (Optimized & Simplified)  
-**Last Updated**: June 15, 2025  
+**Last Updated**: June 26, 2025  
 **Maintainer**: CarWatch Development Team  
-**Key Changes**: Simplified image fetching, direct binary responses, cleanup utilities
+**Description**: Production-ready Flask backend for vehicle license plate recognition and tracking using YOLOv8 models with comprehensive authentication and history management.
