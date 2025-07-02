@@ -171,24 +171,48 @@ def serve_image_by_id(image_id):
 @history_bp.route('/fetch_img', methods=['GET'])
 def fetch_image():
     try:
+        logger.info("Starting fetch_image request")
         with get_db_connection() as (db, cursor):
-            sql = "SELECT image_data, upload_date FROM images ORDER BY upload_date DESC LIMIT 1"
+            logger.info("Database connection established")
+            sql = "SELECT image_data, upload_date, file_type FROM images ORDER BY upload_date DESC LIMIT 1"
             cursor.execute(sql)
+            logger.info("SQL query executed")
             result = cursor.fetchone()
+            logger.info(f"Query result type: {type(result)}")
+            
             if not result:
+                logger.warning("No images found in database")
                 return jsonify({'success': False, 'message': 'No images found in database'}), 404
-            image_data = result[0]
-            return Response(
+            
+            logger.info(f"Result keys: {list(result.keys())}")
+            image_data = result['image_data']  # Access as dictionary key, not index
+            logger.info(f"Image data type: {type(image_data)}, length: {len(image_data) if image_data else 'None'}")
+            
+            file_type = result.get('file_type', 'image/jpeg')  # Get file_type with default
+            logger.info(f"File type: {file_type}")
+            
+            if not image_data:
+                logger.warning("Image data is empty")
+                return jsonify({'success': False, 'message': 'Image data is empty'}), 404
+            
+            logger.info("Creating response")
+            response = Response(
                 image_data,
-                mimetype='image/jpeg',
+                mimetype=file_type,
                 headers={
-                    'Content-Type': 'image/jpeg',
+                    'Content-Type': file_type,
                     'Content-Length': str(len(image_data)),
                     'Cache-Control': 'no-cache'
                 }
             )
+            logger.info("Response created successfully")
+            return response
+            
     except Exception as e:
         logger.error(f"Error in fetch_image: {e}")
+        logger.error(f"Error type: {type(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({'success': False, 'message': f'Error fetching image: {str(e)}'}), 500
 
 @history_bp.route('/cleanup_images', methods=['POST'])
